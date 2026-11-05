@@ -17,26 +17,34 @@ public final class HomePage {
 
     private static final Pattern WAF_INCIDENT = Pattern.compile("incident_id=([\\w-]+)");
 
+    private final Page page;
     private final CookieBannerComponent cookieBanner;
 
     private HomePage(Page page) {
+        this.page = page;
         this.cookieBanner = new CookieBannerComponent(page);
     }
 
     public static HomePage open(Page page) {
         String url = ConfigReader.baseUrl();
         log.info("Opening {}", url);
-        Response response = page.navigate(url, new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
-        assertThat(response.ok()).as("HTTP %d for %s", response.status(), response.url()).isTrue();
-        assertNotBlockedByWaf(page);
-        return new HomePage(page);
+        HomePage homePage = new HomePage(page);
+        homePage.assertLoaded(page.navigate(url, new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED)));
+        return homePage;
+    }
+
+    public HomePage reload() {
+        log.info("Reloading {}", page.url());
+        assertLoaded(page.reload(new Page.ReloadOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED)));
+        return this;
     }
 
     public CookieBannerComponent cookieBanner() {
         return cookieBanner;
     }
 
-    private static void assertNotBlockedByWaf(Page page) {
+    private void assertLoaded(Response response) {
+        assertThat(response.ok()).as("HTTP %d for %s", response.status(), response.url()).isTrue();
         Locator challenge = page.locator("iframe[src*='_Incapsula_Resource']");
         if (challenge.count() == 0) {
             return;

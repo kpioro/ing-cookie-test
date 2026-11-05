@@ -18,13 +18,16 @@ class CookieConsentTest extends BaseTest {
         ConsentCookieVerifier consentCookies = ConsentCookieVerifier.of(context());
         consentCookies.assertNoConsentStored();
 
-        HomePage.open(page())
-                .cookieBanner()
+        HomePage homePage = HomePage.open(page());
+        homePage.cookieBanner()
                 .shouldBeDisplayed()
                 .customize()
                 .enableAnalyticalCookies()
                 .acceptSelected();
 
         consentCookies.assertAnalyticalConsentPersisted(testStartedAt);
+
+        homePage.reload();
+        consentCookies.assertOnlyAnalyticalCookiesStored();
     }
 }

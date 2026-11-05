@@ -7,6 +7,7 @@ import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.options.Cookie;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -23,6 +24,9 @@ public final class ConsentCookieVerifier {
 
     public static final String GDPR_COOKIE = "cookiePolicyGDPR";
     public static final String GDPR_DETAILS_COOKIE = GDPR_COOKIE + "__details";
+
+    private static final List<String> ANALYTICAL_COOKIE_PREFIXES = List.of("_ga", "AMCV_");
+    private static final List<String> MARKETING_COOKIE_PREFIXES = List.of("_fbp", "_gcl_au", "_uetsid", "_uetvid");
 
     private static final Pattern CREATE_TIMESTAMP = Pattern.compile("\"cookieCreateTimestamp\"\\s*:\\s*(\\d+)");
     private static final Duration POLL_INTERVAL = Duration.ofMillis(200);
@@ -43,6 +47,36 @@ public final class ConsentCookieVerifier {
                 .pollInterval(POLL_INTERVAL)
                 .pollInSameThread()
                 .untilAsserted(() -> verifyAnalyticalConsent(givenNotBefore));
+    }
+
+    public void assertOnlyAnalyticalCookiesStored() {
+        await("analytical cookies %s* stored without marketing cookies %s*"
+                        .formatted(ANALYTICAL_COOKIE_PREFIXES, MARKETING_COOKIE_PREFIXES))
+                .atMost(ConfigReader.timeout())
+                .pollDelay(Duration.ZERO)
+                .pollInterval(POLL_INTERVAL)
+                .pollInSameThread()
+                .untilAsserted(this::verifyOnlyAnalyticalCookies);
+    }
+
+    private void verifyOnlyAnalyticalCookies() {
+        List<String> names = cookiesByName().keySet().stream().sorted().toList();
+
+        SoftAssertions.assertSoftly(softly -> {
+            ANALYTICAL_COOKIE_PREFIXES.forEach(prefix -> softly.assertThat(names)
+                    .as("analytical cookie %s* in %s", prefix, names)
+                    .anyMatch(name -> name.startsWith(prefix)));
+            softly.assertThat(names)
+                    .as("marketing cookies %s* in %s", MARKETING_COOKIE_PREFIXES, names)
+                    .noneMatch(name -> startsWithAny(name, MARKETING_COOKIE_PREFIXES));
+        });
+
+        log.info("Analytical cookies stored: {}",
+                names.stream().filter(name -> startsWithAny(name, ANALYTICAL_COOKIE_PREFIXES)).toList());
+    }
+
+    private static boolean startsWithAny(String name, List<String> prefixes) {
+        return prefixes.stream().anyMatch(name::startsWith);
     }
 
     private void verifyAnalyticalConsent(Instant givenNotBefore) {

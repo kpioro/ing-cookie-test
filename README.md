@@ -8,8 +8,10 @@ Test E2E w Javie i Playwright:
 2. w banerze cookie klika **Dostosuj**,
 3. włącza **Cookies analityczne**,
 4. klika **Zaakceptuj zaznaczone**,
-5. sprawdza w magazynie ciasteczek przeglądarki, że zgoda analityczna została zapisana (`cookiePolicyGDPR`
-   i `cookiePolicyGDPR__details`).
+5. sprawdza w magazynie ciasteczek przeglądarki, że:
+   - zgoda analityczna została zapisana (`cookiePolicyGDPR` i `cookiePolicyGDPR__details`),
+   - po przeładowaniu strony zapisały się ciasteczka analityczne (Google Analytics `_ga*`, Adobe Analytics `AMCV_*`),
+     a marketingowe (`_fbp`, `_gcl_au`, `_uetsid`, `_uetvid`) nie.
 
 Test biegnie równolegle na `chromium`, `firefox` i `webkit`. Lokalnie wystarcza jedna komenda, a w GitHub Actions
 każdy silnik dostaje osobny job w macierzy.
@@ -30,6 +32,12 @@ uruchomieniu.
 
 Na Windows zamiast `./mvnw` użyj `mvnw.cmd`.
 
+Na Linuksie przeglądarki potrzebują bibliotek systemowych. Jednorazowo (przez `sudo`) instaluje je:
+
+```bash
+./mvnw exec:java -Dexec.args="install --with-deps"
+```
+
 Przy porażce trace zapisuje się w `target/traces/trace-<browser>-<timestamp>.zip`. Można go otworzyć tak:
 
 ```bash
@@ -39,9 +47,12 @@ Przy porażce trace zapisuje się w `target/traces/trace-<browser>-<timestamp>.z
 Fragment logu z równoległego przebiegu. `[%thread]` to wątek JUnit, a druga kolumna to przeglądarka:
 
 ```
-22:30:49.462 INFO  [ForkJoinPool-1-worker-2] [chromium] p.i.q.c.ConsentCookieVerifier - Consent persisted: cookiePolicyGDPR=3 (ANALYTICAL), ...
-22:30:50.072 INFO  [ForkJoinPool-1-worker-4] [webkit  ] p.i.q.c.ConsentCookieVerifier - Consent persisted: cookiePolicyGDPR=3 (ANALYTICAL), ...
-22:30:50.959 INFO  [ForkJoinPool-1-worker-3] [firefox ] p.i.q.c.ConsentCookieVerifier - Consent persisted: cookiePolicyGDPR=3 (ANALYTICAL), ...
+23:02:31.502 INFO  [ForkJoinPool-1-worker-4] [webkit  ] p.i.q.p.PlaywrightFactory - Session started: webkit 27.2 (headless=true)
+23:02:31.860 INFO  [ForkJoinPool-1-worker-2] [chromium] p.i.q.p.PlaywrightFactory - Session started: chromium 156.0.8078.4 (headless=true)
+23:02:34.107 INFO  [ForkJoinPool-1-worker-3] [firefox ] p.i.q.p.PlaywrightFactory - Session started: firefox 157.0 (headless=true)
+23:02:35.668 INFO  [ForkJoinPool-1-worker-2] [chromium] p.i.q.c.ConsentCookieVerifier - Consent persisted: cookiePolicyGDPR=3 (ANALYTICAL), cookiePolicyGDPR__details={"cookieCreateTimestamp":1793916153838}
+23:02:35.673 INFO  [ForkJoinPool-1-worker-2] [chromium] p.ing.qa.pages.HomePage - Reloading https://www.ing.pl/
+23:02:37.260 INFO  [ForkJoinPool-1-worker-2] [chromium] p.i.q.c.ConsentCookieVerifier - Analytical cookies stored: [AMCV_2887EB1C55BBFD957F000101%40AdobeOrg, _ga, _ga_6S7EZXEX42]
 ```
 
 ## Konfiguracja
@@ -67,6 +78,97 @@ równolegle, a każdy z nich wykonuje:
 3. `./mvnw clean test -Dbrowser=${{ matrix.browser }}`,
 4. podsumowanie wyników testów w zakładce joba i jako osobny check,
 5. publikację raportów Surefire, a przy porażce także trace'ów Playwright.
+
+```yaml
+name: Playwright E2E
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  e2e:
+    name: e2e / ${{ matrix.browser }}
+    runs-on: ${{ vars.E2E_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: ${{ runner.environment == 'github-hosted' && 'maven' || '' }}
+
+      - name: Prepare Maven wrapper
+        run: chmod +x mvnw
+
+      - name: Resolve Playwright version
+        if: runner.environment == 'github-hosted'
+        id: playwright
+        run: echo "version=$(sed -n 's:.*<playwright.version>\(.*\)</playwright.version>.*:\1:p' pom.xml)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: runner.environment == 'github-hosted'
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}
+
+      - name: Install ${{ matrix.browser }}
+        run: ./mvnw -B -ntp -q exec:java -Dexec.args="install ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }} ${{ matrix.browser }}"
+
+      - name: Test on ${{ matrix.browser }}
+        run: ./mvnw -B -ntp clean test -Dbrowser=${{ matrix.browser }}
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+      - name: Test results summary
+        if: always()
+        uses: mikepenz/action-junit-report@v6.7.0
+        with:
+          report_paths: target/surefire-reports/TEST-*.xml
+          check_name: test results / ${{ matrix.browser }}
+          include_passed: true
+          detailed_summary: true
+          require_tests: true
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces-${{ matrix.browser }}
+          path: target/traces/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Surefire reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surefire-reports-${{ matrix.browser }}
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+```
 
 ### Dlaczego self-hosted runner
 
@@ -151,6 +253,10 @@ z obcego wątku. W jednym `untilAsserted` sprawdza, że:
 - ciasteczko jest trwałe,
 - znacznik czasu w `__details` pochodzi z bieżącego testu.
 
+Potem test przeładowuje stronę i tak samo czeka, aż pojawią się ciasteczka analityczne (`_ga*`, `AMCV_*`) bez
+marketingowych. Nazwy są dopasowywane po prefiksie, bo sufiksy (`_ga_<id strumienia>`, `AMCV_<id organizacji>`)
+to identyfikatory konfiguracji banku.
+
 ## Ustalenia z analizy ing.pl
 
 - Przycisk w ustawieniach ma etykietę **„Zaakceptuj zaznaczone”**, a nie „Zaakceptuj wybrane”. Lokator akceptuje obie.
@@ -167,6 +273,14 @@ z obcego wątku. W jednym `untilAsserted` sprawdza, że:
 
   Strona sama to potwierdza: `CookiePolicyManager.isCookiePolicyAnalyticalAccepted()` zwraca `true` dla `3`.
 - `cookiePolicyGDPR__details` ma postać `{"cookieCreateTimestamp":<ms>}`.
+- Skrypty analityczne i marketingowe ładują się dopiero przy kolejnym wczytaniu strony po zapisaniu zgody. Wynik jest
+  taki sam w chromium, firefox i webkit:
+
+  | Wybór w banerze | `cookiePolicyGDPR` | Ciasteczka `.ing.pl` po przeładowaniu |
+  |---|---|---|
+  | tylko techniczne | `1` | tylko techniczne (Imperva) |
+  | analityczne | `3` | `_ga`, `_ga_<id>`, `AMCV_<id>`, `AMCVS_<id>`, `s_cc` |
+  | analityczne i marketingowe | `4` | powyższe oraz `_fbp`, `_gcl_au`, `_uetsid`, `_uetvid` |
 
 ## Znane ograniczenia
 
