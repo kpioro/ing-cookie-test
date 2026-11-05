@@ -1,0 +1,83 @@
+name: Playwright E2E
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e / ${{ matrix.browser }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Prepare Maven wrapper
+        run: chmod +x mvnw
+
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(sed -n 's:.*<playwright.version>\(.*\)</playwright.version>.*:\1:p' pom.xml)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}
+
+      - name: Install ${{ matrix.browser }} with OS dependencies
+        run: ./mvnw -B -ntp -q exec:java -Dexec.args="install --with-deps ${{ matrix.browser }}"
+
+      - name: Test on ${{ matrix.browser }}
+        run: ./mvnw -B -ntp clean test -Dbrowser=${{ matrix.browser }}
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+      - name: Test results summary
+        if: always()
+        uses: mikepenz/action-junit-report@v6.7.0
+        with:
+          report_paths: target/surefire-reports/TEST-*.xml
+          check_name: test results / ${{ matrix.browser }}
+          include_passed: true
+          detailed_summary: true
+          require_tests: true
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces-${{ matrix.browser }}
+          path: target/traces/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Surefire reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: surefire-reports-${{ matrix.browser }}
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 14
