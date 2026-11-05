@@ -19,6 +19,18 @@ każdy silnik dostaje osobny job w macierzy.
 Stos: Java 21, Maven (wrapper), Playwright for Java 1.64, JUnit 5 (`@ParameterizedTest`), AssertJ, Awaitility,
 Lombok, SLF4J + Logback.
 
+## Jak ocenić rozwiązanie
+
+- **Przebiegi pipeline'u** są w zakładce [Actions](https://github.com/kpioro/ing-cookie-test/actions/workflows/playwright.yml).
+  Każdy run to trzy joby (chromium, firefox, webkit) startujące jednocześnie, z podsumowaniem wyników testów
+  i raportami Surefire.
+- **Lokalnie** wystarczy `./mvnw clean test` z polskiego adresu IP (szczegóły niżej).
+- **We własnym forku** Actions są domyślnie wyłączone. Po ich włączeniu workflow trafi na runnery GitHuba
+  (`ubuntu-24.04`, adresy z USA), a test zakończy się komunikatem
+  `ing.pl WAF (Imperva) answered with a CAPTCHA challenge instead of the home page…`. To geo-blokada banku,
+  a nie błąd testu. Na zielono pipeline przejdzie w forku z self-hosted runnerem z polskim IP i zmienną
+  repozytorium `E2E_RUNNER` ustawioną na jego etykietę (patrz [Dlaczego self-hosted runner](#dlaczego-self-hosted-runner)).
+
 ## Uruchomienie lokalne
 
 Wymagane jest tylko JDK 21 (`JAVA_HOME`). Maven pobiera się sam przez wrapper, a przeglądarki Playwright przy pierwszym
