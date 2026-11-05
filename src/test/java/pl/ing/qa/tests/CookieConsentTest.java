@@ -7,6 +7,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import pl.ing.qa.config.BrowserName;
 import pl.ing.qa.consent.ConsentCookieVerifier;
 import pl.ing.qa.pages.HomePage;
+import pl.ing.qa.pages.components.CookieBannerComponent;
 
 @DisplayName("ing.pl cookie consent")
 class CookieConsentTest extends BaseTest {
@@ -16,15 +17,14 @@ class CookieConsentTest extends BaseTest {
     void shouldPersistAnalyticalConsentChosenInCookieSettings(BrowserName browser) {
         Instant testStartedAt = Instant.now();
         ConsentCookieVerifier consentCookies = ConsentCookieVerifier.of(context());
-        consentCookies.assertNoConsentStored();
 
         HomePage homePage = HomePage.open(page());
-        homePage.cookieBanner()
-                .shouldBeDisplayed()
-                .customize()
+        CookieBannerComponent cookieBanner = homePage.cookieBanner().shouldBeDisplayed();
+        consentCookies.assertNoConsentStored();
+
+        cookieBanner.customize()
                 .enableAnalyticalCookies()
                 .acceptSelected();
-
         consentCookies.assertAnalyticalConsentPersisted(testStartedAt);
 
         homePage.reload();

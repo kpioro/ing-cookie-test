@@ -110,9 +110,9 @@ jobs:
         browser: [chromium, firefox, webkit]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "21"
@@ -128,7 +128,7 @@ jobs:
 
       - name: Cache Playwright browsers
         if: runner.environment == 'github-hosted'
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}
@@ -143,7 +143,7 @@ jobs:
 
       - name: Test results summary
         if: always()
-        uses: mikepenz/action-junit-report@v6.7.0
+        uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
         with:
           report_paths: target/surefire-reports/TEST-*.xml
           check_name: test results / ${{ matrix.browser }}
@@ -153,7 +153,7 @@ jobs:
 
       - name: Upload Playwright traces
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-traces-${{ matrix.browser }}
           path: target/traces/
@@ -162,7 +162,7 @@ jobs:
 
       - name: Upload Surefire reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: surefire-reports-${{ matrix.browser }}
           path: target/surefire-reports/
@@ -193,7 +193,11 @@ Kroki workflow używają `shell: bash`. Na Windows runner szuka `bash` w `PATH`,
 Można to ustawić w pliku `.env` w katalogu runnera (`PATH=...`).
 
 Workflow celowo nie reaguje na `pull_request`. Repozytorium jest publiczne, a PR z forka mógłby wykonać dowolny kod
-na maszynie z self-hosted runnerem.
+na maszynie z self-hosted runnerem. Z tego samego powodu akcje są przypięte do SHA commita, a nie do tagu,
+który można przesunąć.
+
+Trzy joby na jednej maszynie dzielą lokalne repozytorium Mavena. `.mvn/maven.config` włącza blokady plikowe
+resolvera (`file-lock`), żeby równoległe pobieranie tych samych artefaktów ich nie uszkodziło.
 
 ## Struktura projektu
 
@@ -233,11 +237,23 @@ na job.
 
 - flagi Chromium (`--disable-blink-features=AutomationControlled` i inne) oraz kanał `chromium`, czyli pełna
   przeglądarka w trybie headless zamiast headless shell,
-- User-Agent budowany z rzeczywistej wersji silnika, bez `HeadlessChrome`,
-- polskie ustawienia: `pl-PL`, `Europe/Warsaw`, geolokalizacja Warszawy, viewport 1920×1080 i nagłówki
-  `Accept-Language`/`Accept`,
-- `stealth.js`, który poprawia `navigator.webdriver`, `window.chrome`, `navigator.languages`, `navigator.plugins`
-  i `permissions.query`.
+- User-Agent bez `HeadlessChrome`. Chromium i Firefox dostają prawdziwy UA silnika, więc system w UA zgadza się
+  z `navigator.platform` i Client Hints. WebKit podaje UA Safari na macOS i pasujące `navigator.platform = MacIntel`,
+- polskie ustawienia: `pl-PL`, `Europe/Warsaw`, geolokalizacja Warszawy i viewport 1920×1080,
+- `stealth.js`, który ustawia `navigator.webdriver = false` (jak w przeglądarce bez automatyzacji) oraz poprawia
+  `window.chrome`, `navigator.languages`, `navigator.plugins` i `permissions.query`.
+
+Dwa świadome odstępstwa od literalnej specyfikacji, oba zmierzone lokalnym serwerem HTTP:
+
+- **Nagłówki `Accept` i `Accept-Language` z `setExtraHTTPHeaders`** nie docierały na nawigacji w Chromium, bo
+  Chromium nadpisuje je własnymi. Do tego `Accept: text/html…` nadpisywał w każdym silniku `Accept` z `fetch`/XHR
+  strony (np. `application/json`). Dlatego oba nagłówki są ustawiane przez `context.route` tylko dla żądań
+  nawigacyjnych, a `Accept-Language` dodatkowo globalnie. Ciasteczka nadal idą z każdym żądaniem.
+- **`navigator.webdriver`** zwraca `false`, a nie `undefined`. Prawdziwa przeglądarka zwraca `false`, a Chromium
+  z flagą `AutomationControlled` miał `false` już przed patchem.
+
+`--no-sandbox` jest dodawane tylko na Linuksie, gdzie bywa potrzebne w kontenerach. Na Windows i macOS sandbox
+Chromium jest włączony, bo testy na self-hosted runnerze ładują skrypty stron trzecich.
 
 **Lokatory.** Używam wyłącznie `getByRole` z nazwą dostępną, bez XPath i klas CSS. Role i etykiety ARIA to kontrakt
 dostępności, który przetrwa redesign. Dialog banera jest rozpoznawany po zawartości (przycisk „Dostosuj”,
@@ -253,9 +269,12 @@ z obcego wątku. W jednym `untilAsserted` sprawdza, że:
 - ciasteczko jest trwałe,
 - znacznik czasu w `__details` pochodzi z bieżącego testu.
 
-Potem test przeładowuje stronę i tak samo czeka, aż pojawią się ciasteczka analityczne (`_ga*`, `AMCV_*`) bez
-marketingowych. Nazwy są dopasowywane po prefiksie, bo sufiksy (`_ga_<id strumienia>`, `AMCV_<id organizacji>`)
-to identyfikatory konfiguracji banku.
+Potem test przeładowuje stronę i czeka, aż pojawią się ciasteczka analityczne `_ga`/`_ga_<id>` i `AMCV_<id>`.
+Sufiksy to identyfikatory konfiguracji banku, więc nazwy są dopasowywane wzorcem. Następnie przez 3 sekundy
+sprawdza, że nie pojawia się żadne ciasteczko marketingowe. Samo sprawdzenie „w chwili, gdy są już analityczne”
+byłoby wyścigiem z wolniej ładującymi się tagami marketingowymi.
+
+Przekroczenie czasu Awaitility jest zgłaszane jako `AssertionError`, więc raport pokazuje „Failure”, a nie „Error”.
 
 ## Ustalenia z analizy ing.pl
 

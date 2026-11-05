@@ -6,7 +6,7 @@
         }
     };
 
-    redefine(Navigator.prototype, 'webdriver', () => undefined);
+    redefine(Navigator.prototype, 'webdriver', () => false);
 
     const languages = Object.freeze(['pl-PL', 'pl', 'en-US', 'en']);
     redefine(Navigator.prototype, 'languages', () => languages);

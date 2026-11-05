@@ -51,14 +51,6 @@ public final class PlaywrightFactory {
         }
     }
 
-    public static Playwright playwright() {
-        return current(PLAYWRIGHT, "Playwright");
-    }
-
-    public static Browser browser() {
-        return current(BROWSER, "Browser");
-    }
-
     public static BrowserContext context() {
         return current(CONTEXT, "BrowserContext");
     }

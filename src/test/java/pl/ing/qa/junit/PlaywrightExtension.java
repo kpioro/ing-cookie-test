@@ -19,6 +19,15 @@ public final class PlaywrightExtension implements InvocationInterceptor {
     private static final String MDC_BROWSER = "browser";
 
     @Override
+    public void interceptTestMethod(Invocation<Void> invocation,
+                                    ReflectiveInvocationContext<Method> invocationContext,
+                                    ExtensionContext extensionContext) {
+        invocation.skip();
+        throw new ExtensionConfigurationException("%s must be a @ParameterizedTest with @MethodSource(BROWSERS)"
+                .formatted(invocationContext.getExecutable()));
+    }
+
+    @Override
     public void interceptTestTemplateMethod(Invocation<Void> invocation,
                                             ReflectiveInvocationContext<Method> invocationContext,
                                             ExtensionContext extensionContext) throws Throwable {

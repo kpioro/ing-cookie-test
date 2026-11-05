@@ -44,6 +44,7 @@ public final class HomePage {
     }
 
     private void assertLoaded(Response response) {
+        assertThat(response).as("main document response for %s", page.url()).isNotNull();
         assertThat(response.ok()).as("HTTP %d for %s", response.status(), response.url()).isTrue();
         Locator challenge = page.locator("iframe[src*='_Incapsula_Resource']");
         if (challenge.count() == 0) {
