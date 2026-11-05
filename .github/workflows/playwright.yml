@@ -3,7 +3,6 @@ name: Playwright E2E
 on:
   push:
     branches: [main, master]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -14,10 +13,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   e2e:
     name: e2e / ${{ matrix.browser }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.E2E_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -31,23 +34,25 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-          cache: maven
+          cache: ${{ runner.environment == 'github-hosted' && 'maven' || '' }}
 
       - name: Prepare Maven wrapper
         run: chmod +x mvnw
 
       - name: Resolve Playwright version
+        if: runner.environment == 'github-hosted'
         id: playwright
         run: echo "version=$(sed -n 's:.*<playwright.version>\(.*\)</playwright.version>.*:\1:p' pom.xml)" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}
 
-      - name: Install ${{ matrix.browser }} with OS dependencies
-        run: ./mvnw -B -ntp -q exec:java -Dexec.args="install --with-deps ${{ matrix.browser }}"
+      - name: Install ${{ matrix.browser }}
+        run: ./mvnw -B -ntp -q exec:java -Dexec.args="install ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }} ${{ matrix.browser }}"
 
       - name: Test on ${{ matrix.browser }}
         run: ./mvnw -B -ntp clean test -Dbrowser=${{ matrix.browser }}
