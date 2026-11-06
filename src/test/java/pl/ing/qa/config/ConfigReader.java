@@ -25,8 +25,8 @@ public final class ConfigReader {
         return Duration.ofMillis(property("timeout").map(Long::parseLong).orElse(15_000L));
     }
 
-    public static Optional<Boolean> ignoreHttpsErrors() {
-        return property("ignoreHttpsErrors").map(Boolean::parseBoolean);
+    public static boolean ignoreHttpsErrors() {
+        return property("ignoreHttpsErrors").map(Boolean::parseBoolean).orElse(false);
     }
 
     private static Optional<String> property(String key) {

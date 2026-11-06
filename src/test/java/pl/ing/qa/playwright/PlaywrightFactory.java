@@ -2,9 +2,11 @@ package pl.ing.qa.playwright;
 
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
+import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.assertions.PlaywrightAssertions;
+import java.util.Locale;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +16,8 @@ import pl.ing.qa.config.ConfigReader;
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class PlaywrightFactory {
+
+    private static final boolean IS_LINUX = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("linux");
 
     private static final ThreadLocal<Playwright> PLAYWRIGHT = new ThreadLocal<>();
     private static final ThreadLocal<Browser> BROWSER = new ThreadLocal<>();
@@ -33,10 +37,16 @@ public final class PlaywrightFactory {
             Playwright playwright = Playwright.create();
             PLAYWRIGHT.set(playwright);
 
-            Browser browser = browserName.browserType(playwright).launch(StealthConfig.launchOptions(browserName));
+            Browser browser = browserName.browserType(playwright).launch(new BrowserType.LaunchOptions()
+                    .setHeadless(ConfigReader.headless())
+                    .setChromiumSandbox(!IS_LINUX));
             BROWSER.set(browser);
 
-            BrowserContext context = StealthConfig.newContext(browser, browserName);
+            BrowserContext context = browser.newContext(new Browser.NewContextOptions()
+                    .setLocale("pl-PL")
+                    .setTimezoneId("Europe/Warsaw")
+                    .setViewportSize(1920, 1080)
+                    .setIgnoreHTTPSErrors(ignoreHttpsErrors()));
             context.setDefaultTimeout(ConfigReader.timeout().toMillis());
             CONTEXT.set(context);
 
@@ -51,10 +61,6 @@ public final class PlaywrightFactory {
         }
     }
 
-    public static BrowserContext context() {
-        return current(CONTEXT, "BrowserContext");
-    }
-
     public static Page page() {
         return current(PAGE, "Page");
     }
@@ -64,6 +70,14 @@ public final class PlaywrightFactory {
         closeQuietly(CONTEXT, "BrowserContext");
         closeQuietly(BROWSER, "Browser");
         closeQuietly(PLAYWRIGHT, "Playwright");
+    }
+
+    private static boolean ignoreHttpsErrors() {
+        boolean ignore = ConfigReader.ignoreHttpsErrors();
+        if (ignore) {
+            log.warn("TLS certificate validation is disabled (-DignoreHttpsErrors=true)");
+        }
+        return ignore;
     }
 
     private static <T> T current(ThreadLocal<T> holder, String type) {

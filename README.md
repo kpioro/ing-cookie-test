@@ -8,314 +8,135 @@ Test E2E w Javie i Playwright:
 2. w banerze cookie klika **Dostosuj**,
 3. włącza **Cookies analityczne**,
 4. klika **Zaakceptuj zaznaczone**,
-5. sprawdza w magazynie ciasteczek przeglądarki, że:
-   - zgoda analityczna została zapisana (`cookiePolicyGDPR` i `cookiePolicyGDPR__details`),
-   - po przeładowaniu strony zapisały się ciasteczka analityczne (Google Analytics `_ga*`, Adobe Analytics `AMCV_*`),
-     a marketingowe (`_fbp`, `_gcl_au`, `_uetsid`, `_uetvid`) nie.
+5. sprawdza w magazynie ciasteczek, że zgoda analityczna została zapisana, a potem – po przeładowaniu – że strona
+   odczytuje ją jako tylko analityczną i że pojawiły się ciasteczka analityczne, bez marketingowych.
 
-Test biegnie równolegle na `chromium`, `firefox` i `webkit`. Lokalnie wystarcza jedna komenda, a w GitHub Actions
-każdy silnik dostaje osobny job w macierzy.
+Test biegnie równolegle na `chromium`, `firefox` i `webkit`. Lokalnie wystarcza jedna komenda. W GitHub Actions
+kompilacja idzie na runnerze GitHuba, a E2E – macierz trzech przeglądarek na self-hosted runnerach z polskim IP.
 
 Stos: Java 21, Maven (wrapper), Playwright for Java 1.64, JUnit 5 (`@ParameterizedTest`), AssertJ, Awaitility,
 Lombok, SLF4J + Logback.
 
 ## Jak ocenić rozwiązanie
 
-- **Przebiegi pipeline'u** są w zakładce [Actions](https://github.com/kpioro/ing-cookie-test/actions/workflows/playwright.yml).
-  Każdy run to trzy joby (chromium, firefox, webkit) startujące jednocześnie, z podsumowaniem wyników testów
-  i raportami Surefire.
-- **Lokalnie** wystarczy `./mvnw clean test` z polskiego adresu IP (szczegóły niżej).
-- **We własnym forku** Actions są domyślnie wyłączone. Po ich włączeniu workflow trafi na runnery GitHuba
-  (`ubuntu-24.04`, adresy z USA), a test zakończy się komunikatem
-  `ing.pl WAF (Imperva) answered with a CAPTCHA challenge instead of the home page…`. To geo-blokada banku,
-  a nie błąd testu. Na zielono pipeline przejdzie w forku z self-hosted runnerem z polskim IP i zmienną
-  repozytorium `E2E_RUNNER` ustawioną na jego etykietę (patrz [Dlaczego self-hosted runner](#dlaczego-self-hosted-runner)).
+- **Pipeline:** [Actions](https://github.com/kpioro/ing-cookie-test/actions/workflows/playwright.yml).
+  Job `build` kompiluje projekt na `ubuntu-24.04` i nie wchodzi na ing.pl. Trzy joby `e2e` (chromium, firefox, webkit)
+  startują jednocześnie i odpalają scenariusz.
+- **Lokalnie:** `./mvnw clean test` z polskiego adresu IP.
+- **We własnym forku:** Actions są domyślnie wyłączone. Po włączeniu `build` powinien być zielony.
+  Joby E2E na runnerach GitHuba padną na geo-blokadzie Imperva (komunikat z numerem incydentu). To nie jest błąd
+  testu. Zielone E2E w forku wymaga self-hosted runnera z polskim IP i zmiennej `E2E_RUNNER` (patrz niżej).
 
 ## Uruchomienie lokalne
 
-Wymagane jest tylko JDK 21 (`JAVA_HOME`). Maven pobiera się sam przez wrapper, a przeglądarki Playwright przy pierwszym
+Wymagane jest JDK 21 (`JAVA_HOME`). Maven pobiera się przez wrapper, przeglądarki Playwright – przy pierwszym
 uruchomieniu.
 
 ```bash
 ./mvnw clean test                       # chromium, firefox i webkit jednocześnie
-./mvnw clean test -Dbrowser=firefox     # jedna przeglądarka (tak działa każdy job w CI)
-./mvnw clean test -Dheadless=false      # z widocznym oknem przeglądarki
+./mvnw clean test -Dbrowser=firefox     # jedna przeglądarka (tak działa każdy job E2E w CI)
+./mvnw clean test -Dheadless=false      # z widocznym oknem
 ```
 
-Na Windows zamiast `./mvnw` użyj `mvnw.cmd`.
-
-Na Linuksie przeglądarki potrzebują bibliotek systemowych. Jednorazowo (przez `sudo`) instaluje je:
+Na Windows zamiast `./mvnw` użyj `mvnw.cmd`. Na Linuksie jednorazowo (przez `sudo`):
 
 ```bash
 ./mvnw exec:java -Dexec.args="install --with-deps"
 ```
 
-Przy porażce trace zapisuje się w `target/traces/trace-<browser>-<timestamp>.zip`. Można go otworzyć tak:
+Przy porażce trace jest w `target/traces/trace-<browser>-<timestamp>.zip`:
 
 ```bash
 ./mvnw exec:java -Dexec.args="show-trace target/traces/<plik>.zip"
 ```
 
-Fragment logu z równoległego przebiegu. `[%thread]` to wątek JUnit, a druga kolumna to przeglądarka:
-
-```
-23:02:31.502 INFO  [ForkJoinPool-1-worker-4] [webkit  ] p.i.q.p.PlaywrightFactory - Session started: webkit 27.2 (headless=true)
-23:02:31.860 INFO  [ForkJoinPool-1-worker-2] [chromium] p.i.q.p.PlaywrightFactory - Session started: chromium 156.0.8078.4 (headless=true)
-23:02:34.107 INFO  [ForkJoinPool-1-worker-3] [firefox ] p.i.q.p.PlaywrightFactory - Session started: firefox 157.0 (headless=true)
-23:02:35.668 INFO  [ForkJoinPool-1-worker-2] [chromium] p.i.q.c.ConsentCookieVerifier - Consent persisted: cookiePolicyGDPR=3 (ANALYTICAL), cookiePolicyGDPR__details={"cookieCreateTimestamp":1793916153838}
-23:02:35.673 INFO  [ForkJoinPool-1-worker-2] [chromium] p.ing.qa.pages.HomePage - Reloading https://www.ing.pl/
-23:02:37.260 INFO  [ForkJoinPool-1-worker-2] [chromium] p.i.q.c.ConsentCookieVerifier - Analytical cookies stored: [AMCV_2887EB1C55BBFD957F000101%40AdobeOrg, _ga, _ga_6S7EZXEX42]
-```
-
 ## Konfiguracja
 
-Parametry przekazuje się jako System Properties (`-Dklucz=wartość`).
+Parametry to System Properties (`-Dklucz=wartość`).
 
 | Klucz | Domyślnie | Opis |
 |---|---|---|
 | `baseUrl` | `https://www.ing.pl` | adres strony |
 | `browser` | `ALL` | `ALL`, `chromium`, `firefox` lub `webkit` |
 | `headless` | `true` | tryb bez okna |
-| `timeout` | `15000` | limit akcji, nawigacji, asercji i oczekiwania na ciasteczka (ms) |
-| `ignoreHttpsErrors` | `true` tylko dla WebKit na Windows | wymuszenie lub wyłączenie walidacji TLS |
+| `timeout` | `15000` | limit akcji, asercji i oczekiwania na ciasteczka (ms) |
+| `ignoreHttpsErrors` | `false` | wyłączenie walidacji TLS (ostatnia deska ratunku na WebKit/Windows) |
 
-## Pipeline (GitHub Actions)
+## Pipeline
 
-Plik [`.github/workflows/playwright.yml`](.github/workflows/playwright.yml) uruchamia się na push do `main` i ręcznie
-(`workflow_dispatch`). Macierz `browser: [chromium, firefox, webkit]` z `fail-fast: false` odpala trzy joby
-równolegle, a każdy z nich wykonuje:
-
-1. instalację JDK 21 (Temurin),
-2. instalację tylko swojej przeglądarki,
-3. `./mvnw clean test -Dbrowser=${{ matrix.browser }}`,
-4. podsumowanie wyników testów w zakładce joba i jako osobny check,
-5. publikację raportów Surefire, a przy porażce także trace'ów Playwright.
+Pełny plik: [`.github/workflows/playwright.yml`](.github/workflows/playwright.yml).
+Uruchamia się na push do `main` i ręcznie (`workflow_dispatch`). Nie na `pull_request` – repo jest publiczne,
+a self-hosted runner to ta maszyna.
 
 ```yaml
-name: Playwright E2E
-
-on:
-  push:
-    branches: [main, master]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  checks: write
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-defaults:
-  run:
-    shell: bash
-
 jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./mvnw -B -ntp -q test-compile
+
   e2e:
-    name: e2e / ${{ matrix.browser }}
     runs-on: ${{ vars.E2E_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
-
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: ${{ runner.environment == 'github-hosted' && 'maven' || '' }}
-
-      - name: Prepare Maven wrapper
-        run: chmod +x mvnw
-
-      - name: Resolve Playwright version
-        if: runner.environment == 'github-hosted'
-        id: playwright
-        run: echo "version=$(sed -n 's:.*<playwright.version>\(.*\)</playwright.version>.*:\1:p' pom.xml)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        if: runner.environment == 'github-hosted'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}
-
-      - name: Install ${{ matrix.browser }}
-        run: ./mvnw -B -ntp -q exec:java -Dexec.args="install ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }} ${{ matrix.browser }}"
-
-      - name: Test on ${{ matrix.browser }}
-        run: ./mvnw -B -ntp clean test -Dbrowser=${{ matrix.browser }}
-        env:
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
-
-      - name: Test results summary
-        if: always()
-        uses: mikepenz/action-junit-report@4a26df3e2ae132254ba12a53f65a388d0961e786 # v6.7.0
-        with:
-          report_paths: target/surefire-reports/TEST-*.xml
-          check_name: test results / ${{ matrix.browser }}
-          include_passed: true
-          detailed_summary: true
-          require_tests: true
-
-      - name: Upload Playwright traces
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: playwright-traces-${{ matrix.browser }}
-          path: target/traces/
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Upload Surefire reports
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: surefire-reports-${{ matrix.browser }}
-          path: target/surefire-reports/
-          if-no-files-found: ignore
-          retention-days: 14
+      - run: ./mvnw -B -ntp clean test -Dbrowser=${{ matrix.browser }}
 ```
 
-### Dlaczego self-hosted runner
+Job `e2e` instaluje tylko przeglądarkę z macierzy, publikuje raport Surefire, a przy porażce też trace Playwright.
+Akcje są przypięte do SHA commita.
 
-ing.pl pokazuje ruchowi spoza Polski stronę „Dlaczego widzisz tę stronę? Możliwe, że jesteś za granicą…” z hCaptcha.
-Runnery GitHuba mają adresy Azure z USA, więc dostają tę stronę na pierwszym żądaniu, zanim zadziała jakikolwiek
-kod przeglądarki. Test rozpoznaje tę sytuację i kończy się komunikatem z numerem incydentu Imperva, zamiast
-mylącego „nie znaleziono banera”.
+### Self-hosted runner (E2E)
 
-Dlatego joby biegną na self-hosted runnerach z polskim IP. Runner wybiera zmienna repozytorium `E2E_RUNNER`
-(tu: etykieta `ing-pl`). Bez tej zmiennej workflow używa `ubuntu-24.04` i dodatkowo cache'uje Mavena i przeglądarki
-oraz instaluje zależności systemowe (`--with-deps`). Żeby trzy przeglądarki szły naprawdę jednocześnie, potrzebne są
-trzy runnery z tą etykietą, np. na jednej maszynie z Windows:
+ing.pl pokazuje ruchowi spoza Polski stronę „Dlaczego widzisz tę stronę?” z hCaptcha. Runnery GitHuba mają adresy
+Azure z USA, więc test kończy się komunikatem z numerem incydentu Imperva zamiast timeoutu na banerze.
+Test nie obchodzi hCaptcha i nie maskuje sygnatur automatyzacji.
 
-```bash
-./config.cmd --url https://github.com/kpioro/ing-cookie-test --token <registration-token> \
-             --name ing-1 --labels ing-pl --unattended
-./run.cmd
-```
+Joby E2E idą na runnerach z etykietą ze zmiennej `E2E_RUNNER` (tu: `ing-pl`). Bez zmiennej – `ubuntu-24.04`.
+Trzy równoległe przeglądarki = trzy runnery z tą etykietą. Kroki używają `shell: bash`; na Windows Git Bash
+(`C:\Program Files\Git\usr\bin`) musi być w `PATH` przed `C:\Windows\System32`.
 
-Kroki workflow używają `shell: bash`. Na Windows runner szuka `bash` w `PATH`, więc Git Bash
-(`C:\Program Files\Git\usr\bin`) musi być przed `C:\Windows\System32`, gdzie leży `bash.exe` z WSL.
-Można to ustawić w pliku `.env` w katalogu runnera (`PATH=...`).
+## Architektura
 
-Workflow celowo nie reaguje na `pull_request`. Repozytorium jest publiczne, a PR z forka mógłby wykonać dowolny kod
-na maszynie z self-hosted runnerem. Z tego samego powodu akcje są przypięte do SHA commita, a nie do tagu,
-który można przesunąć.
+- **ThreadLocal.** Playwright for Java nie jest bezpieczny wątkowo. Każdy wątek ma własny `Playwright` / `Browser` /
+  `BrowserContext` / `Page`. Świeży kontekst na test, zamknięcie i `remove()` po teście.
+- **`PlaywrightExtension`.** `@BeforeEach` nie widzi argumentu `@ParameterizedTest`. `InvocationInterceptor` czyta
+  `BrowserName`, otwiera sesję na wątku testu i zapisuje trace tylko przy porażce.
+- **Równoległość.** `BrowserSource` + `-Dbrowser`. `junit-platform.properties`: `concurrent`, pula 3 wątków.
+  W CI ten sam kod, jedna przeglądarka na job.
+- **Lokatory.** Tylko `getByRole` (dialog po „Dostosuj” / przełącznikach, analityka to `role=switch`). Bez XPath
+  i klas CSS.
+- **Ciasteczka bez `Thread.sleep`.** Awaitility + `pollInSameThread()`:
+  1. kontrakt – `cookiePolicyGDPR=3`, świeży `__details`, po reloadzie `CookiePolicyManager` zgłasza analitykę
+     bez marketingu;
+  2. skutek – `_ga` / `_ga_<id>` i `AMCV_<id>`, przez 3 s brak `_fbp`, `_gcl_au`, `_uetsid`, `_uetvid`.
+     Jeśli padnie tylko warstwa 2, komunikat mówi, że zgoda jest zapisana, ale nie pojawiły się oczekiwane
+     ciasteczka dostawców (albo pojawiły się marketingowe).
 
-Trzy joby na jednej maszynie dzielą lokalne repozytorium Mavena. `.mvn/maven.config` włącza blokady plikowe
-resolvera (`file-lock`), żeby równoległe pobieranie tych samych artefaktów ich nie uszkodziło.
+Kontekst ma `pl-PL`, `Europe/Warsaw` i viewport 1920×1080, bo strona jest po polsku. Sandbox Chromium jest włączony
+poza Linuksem.
 
-## Struktura projektu
+## Ustalenia z ing.pl
 
-```
-src/test/java/pl/ing/qa
-├── config       BrowserName, ConfigReader
-├── playwright   PlaywrightFactory, StealthConfig, TraceRecorder
-├── junit        PlaywrightExtension, BrowserSource
-├── pages        HomePage, components/CookieBannerComponent
-├── consent      ConsentLevel, ConsentCookieVerifier
-└── tests        BaseTest, CookieConsentTest
-src/test/resources
-├── junit-platform.properties   równoległość JUnit
-├── logback-test.xml            [%thread] i przeglądarka w logach
-└── stealth/stealth.js          init script maskujący automatyzację
-```
+Przycisk w ustawieniach to **„Zaakceptuj zaznaczone”** (lokator akceptuje też „wybrane”). Kategorie to
+`role=switch`. Wartości `cookiePolicyGDPR`: `0` odłożone, `1` techniczne, `2` marketingowe, `3` analityczne,
+`4` wszystkie – strona potwierdza to przez `CookiePolicyManager.isCookiePolicyAnalyticalAccepted()` dla `3`.
+`__details` = `{"cookieCreateTimestamp":<ms>}`. Tagi analityczne ładują się dopiero po kolejnym wczytaniu strony.
 
-## Decyzje architektoniczne
+`_ga` / `AMCV_` to obserwowany skutek zgody (listopad 2026), nie publiczny kontrakt. Źródłem prawdy jest ciasteczko
+zgody i API banera.
 
-**Bezpieczeństwo wątkowe.** Obiekty Playwright for Java wolno używać tylko z wątku, który je utworzył.
-`PlaywrightFactory` trzyma `Playwright`, `Browser`, `BrowserContext` i `Page` w `ThreadLocal`, więc każdy wątek ma
-własny stos i nic nie jest współdzielone. Każdy test dostaje świeży `BrowserContext` (pusty magazyn ciasteczek).
-Po teście wszystko jest zamykane, a `ThreadLocal` czyszczone, żeby wątek z puli nie przeniósł stanu dalej.
-
-**Cykl życia sesji.** `@BeforeEach` nie widzi argumentu `@ParameterizedTest`, czyli nie wie, którą przeglądarkę
-uruchomić. Dlatego `PlaywrightExtension` (podpinany przez `BaseTest`) implementuje `InvocationInterceptor`: odczytuje
-`BrowserName` z argumentów, otwiera sesję na wątku wykonującym test i zamyka ją po teście. Decyduje też o trace:
-przy porażce zapisuje go do pliku, przy sukcesie zatrzymuje go bez zapisu.
-
-**Równoległość.** `BrowserSource#browsers` (`@MethodSource`) zwraca przeglądarki wybrane przez `-Dbrowser`.
-`junit-platform.properties` włącza tryb `concurrent` ze stałą pulą 3 wątków. `max-pool-size` celowo nie jest
-ograniczone: wątek kontenera `@ParameterizedTest` czeka na swoje wywołania, a JUnit dokłada wtedy wątek
-kompensujący, więc wszystkie trzy przeglądarki startują jednocześnie. W CI ten sam kod działa z jedną przeglądarką
-na job.
-
-**Stealth.** ing.pl stoi za WAF Imperva, dlatego `StealthConfig` ukrywa typowe sygnały automatyzacji:
-
-- flagi Chromium (`--disable-blink-features=AutomationControlled` i inne) oraz kanał `chromium`, czyli pełna
-  przeglądarka w trybie headless zamiast headless shell,
-- User-Agent bez `HeadlessChrome`. Chromium i Firefox dostają prawdziwy UA silnika, więc system w UA zgadza się
-  z `navigator.platform` i Client Hints. WebKit podaje UA Safari na macOS i pasujące `navigator.platform = MacIntel`,
-- polskie ustawienia: `pl-PL`, `Europe/Warsaw`, geolokalizacja Warszawy i viewport 1920×1080,
-- `stealth.js`, który ustawia `navigator.webdriver = false` (jak w przeglądarce bez automatyzacji) oraz poprawia
-  `window.chrome`, `navigator.languages`, `navigator.plugins` i `permissions.query`.
-
-Dwa świadome odstępstwa od literalnej specyfikacji, oba zmierzone lokalnym serwerem HTTP:
-
-- **Nagłówki `Accept` i `Accept-Language` z `setExtraHTTPHeaders`** nie docierały na nawigacji w Chromium, bo
-  Chromium nadpisuje je własnymi. Do tego `Accept: text/html…` nadpisywał w każdym silniku `Accept` z `fetch`/XHR
-  strony (np. `application/json`). Dlatego oba nagłówki są ustawiane przez `context.route` tylko dla żądań
-  nawigacyjnych, a `Accept-Language` dodatkowo globalnie. Ciasteczka nadal idą z każdym żądaniem.
-- **`navigator.webdriver`** zwraca `false`, a nie `undefined`. Prawdziwa przeglądarka zwraca `false`, a Chromium
-  z flagą `AutomationControlled` miał `false` już przed patchem.
-
-`--no-sandbox` jest dodawane tylko na Linuksie, gdzie bywa potrzebne w kontenerach. Na Windows i macOS sandbox
-Chromium jest włączony, bo testy na self-hosted runnerze ładują skrypty stron trzecich.
-
-**Lokatory.** Używam wyłącznie `getByRole` z nazwą dostępną, bez XPath i klas CSS. Role i etykiety ARIA to kontrakt
-dostępności, który przetrwa redesign. Dialog banera jest rozpoznawany po zawartości (przycisk „Dostosuj”,
-przełączniki), a nie po id czy pozycji. Przełącznik analityki to `role=switch`, więc `check()` i `isChecked()`
-działają na stanie `aria-checked`.
-
-**Oczekiwanie na ciasteczka bez `Thread.sleep`.** Baner zapisuje zgodę asynchronicznie. `ConsentCookieVerifier`
-odpytuje `context.cookies()` przez Awaitility z `pollInSameThread()`, bo bez tego Awaitility wołałby Playwright
-z obcego wątku. W jednym `untilAsserted` sprawdza, że:
-
-- oba ciasteczka istnieją,
-- `cookiePolicyGDPR` daje zgodę na analitykę, ale nie na marketing,
-- ciasteczko jest trwałe,
-- znacznik czasu w `__details` pochodzi z bieżącego testu.
-
-Potem test przeładowuje stronę i czeka, aż pojawią się ciasteczka analityczne `_ga`/`_ga_<id>` i `AMCV_<id>`.
-Sufiksy to identyfikatory konfiguracji banku, więc nazwy są dopasowywane wzorcem. Następnie przez 3 sekundy
-sprawdza, że nie pojawia się żadne ciasteczko marketingowe. Samo sprawdzenie „w chwili, gdy są już analityczne”
-byłoby wyścigiem z wolniej ładującymi się tagami marketingowymi.
-
-Przekroczenie czasu Awaitility jest zgłaszane jako `AssertionError`, więc raport pokazuje „Failure”, a nie „Error”.
-
-## Ustalenia z analizy ing.pl
-
-- Przycisk w ustawieniach ma etykietę **„Zaakceptuj zaznaczone”**, a nie „Zaakceptuj wybrane”. Lokator akceptuje obie.
-- Kategorie to przełączniki `role=switch`: „Cookies techniczne”, „Cookies analityczne” i „Cookies marketingowe”.
-- Wartości `cookiePolicyGDPR` z konfiguracji banera banku:
-
-  | Wartość | Znaczenie |
-  |---|---|
-  | `0` | decyzja odłożona |
-  | `1` | tylko techniczne |
-  | `2` | marketingowe |
-  | `3` | analityczne |
-  | `4` | wszystkie |
-
-  Strona sama to potwierdza: `CookiePolicyManager.isCookiePolicyAnalyticalAccepted()` zwraca `true` dla `3`.
-- `cookiePolicyGDPR__details` ma postać `{"cookieCreateTimestamp":<ms>}`.
-- Skrypty analityczne i marketingowe ładują się dopiero przy kolejnym wczytaniu strony po zapisaniu zgody. Wynik jest
-  taki sam w chromium, firefox i webkit:
-
-  | Wybór w banerze | `cookiePolicyGDPR` | Ciasteczka `.ing.pl` po przeładowaniu |
-  |---|---|---|
-  | tylko techniczne | `1` | tylko techniczne (Imperva) |
-  | analityczne | `3` | `_ga`, `_ga_<id>`, `AMCV_<id>`, `AMCVS_<id>`, `s_cc` |
-  | analityczne i marketingowe | `4` | powyższe oraz `_fbp`, `_gcl_au`, `_uetsid`, `_uetvid` |
+| Wybór w banerze | `cookiePolicyGDPR` | Po przeładowaniu |
+|---|---|---|
+| tylko techniczne | `1` | brak GA/Adobe |
+| analityczne | `3` | `_ga`, `_ga_<id>`, `AMCV_<id>` |
+| analityczne i marketingowe | `4` | powyższe oraz `_fbp`, `_gcl_au`, `_uetsid`, `_uetvid` |
 
 ## Znane ograniczenia
 
-- **Geo-blokada:** poza Polską test nie dojdzie do banera (patrz wyżej). Test nie próbuje obchodzić hCaptcha.
-- **WebKit na Windows:** port WinCairo Playwrighta odrzuca poprawny łańcuch certyfikatów ing.pl. Tylko dla tej
-  kombinacji walidacja TLS jest domyślnie wyłączona, z ostrzeżeniem w logu. Można to zmienić przez
-  `-DignoreHttpsErrors=true|false`. Na Linuksie TLS jest walidowany normalnie.
+- **Geo-blokada.** Poza Polską test nie dojdzie do banera. Nie obchodzi hCaptcha.
+- **WebKit na Windows.** Port WinCairo ufa tylko korzeniom już obecnym w magazynie Windows. Jeśli WebKit odrzuci
+  certyfikat ing.pl, otwórz `https://www.ing.pl` raz w Edge – Windows dociągnie brakujący korzeń – i uruchom test
+  ponownie. Świadome wyłączenie walidacji: `-DignoreHttpsErrors=true`. Na Linuksie TLS jest walidowany normalnie.

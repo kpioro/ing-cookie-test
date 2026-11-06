@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.Response;
 import com.microsoft.playwright.options.WaitUntilState;
 import java.util.regex.Matcher;
@@ -16,6 +17,7 @@ import pl.ing.qa.pages.components.CookieBannerComponent;
 public final class HomePage {
 
     private static final Pattern WAF_INCIDENT = Pattern.compile("incident_id=([\\w-]+)");
+    private static final String WEBKIT_UNTRUSTED_CERTIFICATE = "SSL peer certificate or SSH remote key was not OK";
 
     private final Page page;
     private final CookieBannerComponent cookieBanner;
@@ -29,7 +31,7 @@ public final class HomePage {
         String url = ConfigReader.baseUrl();
         log.info("Opening {}", url);
         HomePage homePage = new HomePage(page);
-        homePage.assertLoaded(page.navigate(url, new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED)));
+        homePage.assertLoaded(homePage.navigate(url));
         return homePage;
     }
 
@@ -41,6 +43,19 @@ public final class HomePage {
 
     public CookieBannerComponent cookieBanner() {
         return cookieBanner;
+    }
+
+    private Response navigate(String url) {
+        try {
+            return page.navigate(url, new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
+        } catch (PlaywrightException e) {
+            if (!String.valueOf(e.getMessage()).contains(WEBKIT_UNTRUSTED_CERTIFICATE)) {
+                throw e;
+            }
+            throw new AssertionError(("WebKit rejected the TLS certificate of %s. On Windows WebKit trusts only root "
+                    + "certificates already present in the Windows store, which downloads missing roots on demand - "
+                    + "see README, \"Znane ograniczenia\", for the one-time fix.").formatted(url), e);
+        }
     }
 
     private void assertLoaded(Response response) {

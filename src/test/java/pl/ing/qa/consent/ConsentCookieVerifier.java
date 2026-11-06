@@ -3,7 +3,7 @@ package pl.ing.qa.consent;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import com.microsoft.playwright.BrowserContext;
+import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.Cookie;
 import java.time.Duration;
 import java.time.Instant;
@@ -34,12 +34,27 @@ public final class ConsentCookieVerifier {
             Pattern.compile("AMCV_.+"));
     private static final Set<String> MARKETING_COOKIES = Set.of("_fbp", "_gcl_au", "_uetsid", "_uetvid");
 
+    private static final String COOKIE_POLICY_MANAGER = "window.CookiePolicyManager";
+    private static final String READ_BANK_CONSENT = """
+            () => {
+              const manager = window.CookiePolicyManager;
+              if (typeof manager?.isCookiePolicyAnalyticalAccepted !== 'function'
+                  || typeof manager?.isCookiePolicyMarketingAccepted !== 'function') {
+                return null;
+              }
+              return {
+                analytical: manager.isCookiePolicyAnalyticalAccepted(),
+                marketing: manager.isCookiePolicyMarketingAccepted()
+              };
+            }""";
+    private static final Map<String, Boolean> ANALYTICAL_ONLY = Map.of("analytical", true, "marketing", false);
+
     private static final Pattern CREATE_TIMESTAMP = Pattern.compile("\"cookieCreateTimestamp\"\\s*:\\s*(\\d+)");
     private static final Duration POLL_INTERVAL = Duration.ofMillis(200);
     private static final Duration CLOCK_TOLERANCE = Duration.ofSeconds(5);
     private static final Duration MARKETING_QUIET_PERIOD = Duration.ofSeconds(3);
 
-    private final BrowserContext context;
+    private final Page page;
 
     public void assertNoConsentStored() {
         assertThat(cookiesByName())
@@ -54,15 +69,38 @@ public final class ConsentCookieVerifier {
                 () -> verifyAnalyticalConsent(givenNotBefore));
     }
 
+    public void assertBankReadsAnalyticalOnlyConsent() {
+        untilAsserted(
+                polling("%s reads the stored consent as analytical only".formatted(COOKIE_POLICY_MANAGER),
+                        ConfigReader.timeout()),
+                this::verifyBankReadsAnalyticalOnlyConsent);
+    }
+
     public void assertOnlyAnalyticalCookiesStored() {
-        untilAsserted(
-                polling("analytical cookies %s stored".formatted(ANALYTICAL_COOKIES), ConfigReader.timeout()),
-                this::verifyAnalyticalCookiesStored);
-        untilAsserted(
-                polling("no marketing cookies %s for %s".formatted(MARKETING_COOKIES, MARKETING_QUIET_PERIOD),
-                        MARKETING_QUIET_PERIOD.plusSeconds(1))
-                        .during(MARKETING_QUIET_PERIOD),
-                this::verifyNoMarketingCookies);
+        try {
+            untilAsserted(
+                    polling("analytical cookies %s stored".formatted(ANALYTICAL_COOKIES), ConfigReader.timeout()),
+                    this::verifyAnalyticalCookiesStored);
+            untilAsserted(
+                    polling("no marketing cookies %s for %s".formatted(MARKETING_COOKIES, MARKETING_QUIET_PERIOD),
+                            MARKETING_QUIET_PERIOD.plusSeconds(1))
+                            .during(MARKETING_QUIET_PERIOD),
+                    this::verifyNoMarketingCookies);
+        } catch (AssertionError e) {
+            throw new AssertionError(("Consent is stored (%s, %s) and %s reads it as analytical-only, "
+                    + "but the expected analytics-vendor cookies did not appear, or a marketing cookie did. %s")
+                    .formatted(GDPR_COOKIE, GDPR_DETAILS_COOKIE, COOKIE_POLICY_MANAGER, e.getMessage()), e);
+        }
+    }
+
+    private void verifyBankReadsAnalyticalOnlyConsent() {
+        Object bankConsent = page.evaluate(READ_BANK_CONSENT);
+        Cookie gdpr = cookiesByName().get(GDPR_COOKIE);
+        assertThat(bankConsent)
+                .as("consent reported by %s on %s for %s=%s", COOKIE_POLICY_MANAGER, page.url(), GDPR_COOKIE,
+                        gdpr == null ? null : gdpr.value)
+                .isEqualTo(ANALYTICAL_ONLY);
+        log.info("Bank reads stored consent as {}", bankConsent);
     }
 
     private void verifyAnalyticalCookiesStored() {
@@ -137,7 +175,7 @@ public final class ConsentCookieVerifier {
     }
 
     private Map<String, Cookie> cookiesByName() {
-        return context.cookies(ConfigReader.baseUrl()).stream()
+        return page.context().cookies(ConfigReader.baseUrl()).stream()
                 .collect(Collectors.toMap(cookie -> cookie.name, Function.identity(), (first, duplicate) -> first));
     }
 }

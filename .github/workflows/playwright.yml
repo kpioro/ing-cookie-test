@@ -18,6 +18,27 @@ defaults:
     shell: bash
 
 jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Prepare Maven wrapper
+        run: chmod +x mvnw
+
+      - name: Compile tests
+        run: ./mvnw -B -ntp -q test-compile
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
   e2e:
     name: e2e / ${{ matrix.browser }}
     runs-on: ${{ vars.E2E_RUNNER || 'ubuntu-24.04' }}

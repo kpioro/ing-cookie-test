@@ -16,7 +16,7 @@ class CookieConsentTest extends BaseTest {
     @MethodSource(BROWSERS)
     void shouldPersistAnalyticalConsentChosenInCookieSettings(BrowserName browser) {
         Instant testStartedAt = Instant.now();
-        ConsentCookieVerifier consentCookies = ConsentCookieVerifier.of(context());
+        ConsentCookieVerifier consentCookies = ConsentCookieVerifier.of(page());
 
         HomePage homePage = HomePage.open(page());
         CookieBannerComponent cookieBanner = homePage.cookieBanner().shouldBeDisplayed();
@@ -28,6 +28,7 @@ class CookieConsentTest extends BaseTest {
         consentCookies.assertAnalyticalConsentPersisted(testStartedAt);
 
         homePage.reload();
+        consentCookies.assertBankReadsAnalyticalOnlyConsent();
         consentCookies.assertOnlyAnalyticalCookiesStored();
     }
 }
