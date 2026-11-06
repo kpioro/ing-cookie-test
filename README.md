@@ -1,10 +1,10 @@
-# ing.pl – zgoda na cookies analityczne
+# ing.pl – analytical cookie consent
 
 [![Playwright E2E](https://github.com/kpioro/ing-cookie-test/actions/workflows/playwright.yml/badge.svg)](https://github.com/kpioro/ing-cookie-test/actions/workflows/playwright.yml)
 
-Test w Javie i Playwright otwiera `https://www.ing.pl`, klika **Dostosuj**, włącza **Cookies analityczne**, klika **Zaakceptuj zaznaczone** i sprawdza, że przeglądarka zapisała zgodę (`cookiePolicyGDPR=3` i `cookiePolicyGDPR__details`). Po przeładowaniu strony są ciasteczka analityczne (`_ga`, `AMCV_`), a nie ma marketingowych (`_fbp`, `_gcl_au`, `_uetsid`, `_uetvid`).
+A Java and Playwright test opens `https://www.ing.pl`, clicks **Dostosuj**, enables **Cookies analityczne**, clicks **Zaakceptuj zaznaczone**, and checks that the browser stored the consent (`cookiePolicyGDPR=3` and `cookiePolicyGDPR__details`). After a reload the analytical cookies are present (`_ga`, `AMCV_`) and the marketing cookies are not (`_fbp`, `_gcl_au`, `_uetsid`, `_uetvid`).
 
-Chromium, Firefox i WebKit idą jednocześnie. Potrzebne jest JDK 21.
+Chromium, Firefox, and WebKit run at the same time. JDK 21 is required.
 
 ```bash
 ./mvnw clean test
@@ -12,13 +12,13 @@ Chromium, Firefox i WebKit idą jednocześnie. Potrzebne jest JDK 21.
 ./mvnw clean test -Dheadless=false
 ```
 
-Na Windows użyj `mvnw.cmd`. Na Linuksie raz, z uprawnieniami administratora:
+On Windows use `mvnw.cmd`. On Linux, once, with administrator rights:
 
 ```bash
 ./mvnw exec:java -Dexec.args="install --with-deps"
 ```
 
-| Parametr | Domyślnie |
+| Property | Default |
 |---|---|
 | `baseUrl` | `https://www.ing.pl` |
 | `browser` | `ALL` (`chromium`, `firefox`, `webkit`) |
@@ -28,7 +28,7 @@ Na Windows użyj `mvnw.cmd`. Na Linuksie raz, z uprawnieniami administratora:
 
 ## Pipeline
 
-[`.github/workflows/playwright.yml`](.github/workflows/playwright.yml) startuje na push do `main` i ręcznie. Job `build` na `ubuntu-24.04` tylko kompiluje testy. E2E to macierz trzech przeglądarek:
+[`.github/workflows/playwright.yml`](.github/workflows/playwright.yml) runs on a push to `main` and on manual dispatch. The `build` job on `ubuntu-24.04` only compiles the tests. E2E is a matrix of three browsers:
 
 ```yaml
 e2e:
@@ -41,6 +41,6 @@ e2e:
     - run: ./mvnw -B -ntp clean test -Dbrowser=${{ matrix.browser }}
 ```
 
-ing.pl serwuje stronę główną tylko adresom z Polski. E2E idzie więc na runner z polskim IP (`E2E_RUNNER=ing-pl`). Poza Polską zamiast strony banku jest blokada Imperva; test kończy się wtedy od razu i podaje numer incydentu.
+ing.pl serves the home page only to addresses in Poland. E2E therefore runs on a runner with a Polish IP (`E2E_RUNNER=ing-pl`). Outside Poland the bank page is replaced by an Imperva block page; the test stops at once and reports the incident id.
 
-WebKit na Windows potrafi odrzucić certyfikat ing.pl, dopóki system nie ma tego korzenia. Wystarczy raz otworzyć stronę w Edge albo podać `-DignoreHttpsErrors=true`.
+On Windows, WebKit can reject the ing.pl certificate until the system has that root. Open the page once in Edge, or pass `-DignoreHttpsErrors=true`.
