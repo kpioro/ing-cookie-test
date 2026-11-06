@@ -41,6 +41,6 @@ e2e:
     - run: ./mvnw -B -ntp clean test -Dbrowser=${{ matrix.browser }}
 ```
 
-ing.pl pokazuje ruchowi spoza Polski stronę z hCaptcha. Runnery GitHuba mają adresy z USA, więc E2E jest tam czerwone z komunikatem o blokadzie Imperva. U nas joby E2E idą na self-hosted runnerach z polskim IP (zmienna `E2E_RUNNER=ing-pl`). Test nie obchodzi captchy.
+ing.pl serwuje stronę główną tylko adresom z Polski. E2E idzie więc na runner z polskim IP (`E2E_RUNNER=ing-pl`). Poza Polską zamiast strony banku jest blokada Imperva; test kończy się wtedy od razu i podaje numer incydentu.
 
-WebKit na Windows czasem odrzuca certyfikat ing.pl. Wtedy otwórz stronę raz w Edge i uruchom test ponownie albo podaj `-DignoreHttpsErrors=true`.
+WebKit na Windows potrafi odrzucić certyfikat ing.pl, dopóki system nie ma tego korzenia. Wystarczy raz otworzyć stronę w Edge albo podać `-DignoreHttpsErrors=true`.
